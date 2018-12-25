@@ -2,6 +2,7 @@ package de.asbbremen.svggeomapper.view;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.batik.anim.dom.SVGLocatableSupport;
+import org.apache.batik.anim.dom.SVGOMTextElement;
 import org.apache.batik.bridge.*;
 import org.apache.batik.dom.svg.SVGOMPoint;
 import org.apache.batik.gvt.GraphicsNode;
@@ -19,10 +20,10 @@ public class SVGCanvas extends JSVGCanvas {
         super();
 
         this.setDocumentState(JSVGCanvas.ALWAYS_DYNAMIC);
-        /*this.addMouseListener(new MouseListener() {
+        this.addMouseListener(new MouseListener() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                log.debug("Mouse clicked at {}, {} on {}", e.getX(), e.getY(), SVGCanvas.this.elementAtPosition(e.getPoint()));
+                log.debug("Mouse clicked at {}, {} on {}", e.getX(), e.getY());
             }
 
             @Override
@@ -44,7 +45,7 @@ public class SVGCanvas extends JSVGCanvas {
             public void mouseExited(MouseEvent e) {
 
             }
-        });*/
+        });
     }
 
     public Element elementAtPosition(Point2D point) {
@@ -78,16 +79,27 @@ public class SVGCanvas extends JSVGCanvas {
             if (element instanceof SVGTSpanElement) {
                 SVGTSpanElement span = (SVGTSpanElement) element;
                 log.debug("Span-Text: {}", span.getTextContent());
+
+                SVGOMTextElement text = (SVGOMTextElement) element.getParentNode();
+                SVGRect rect = SVGLocatableSupport.getBBox(text);
+                log.debug("{}, {}, {}, {}", rect.getX(), rect.getY(), rect.getWidth(), rect.getHeight());
+                SVGOMPoint pt = new SVGOMPoint(rect.getX(), rect.getY());
+                SVGMatrix mat = SVGLocatableSupport.getCTM(text);
+                SVGOMPoint screenPt = (SVGOMPoint) pt.matrixTransform(mat);
+                log.debug("On screen: {}, {}", screenPt.getX(), screenPt.getY());
+            } else {
+
+                SVGRect rect = SVGLocatableSupport.getBBox(element);
+                log.debug("{}, {}, {}, {}", rect.getX(), rect.getY(), rect.getWidth(), rect.getHeight());
+
+                SVGOMPoint pt = new SVGOMPoint(rect.getX(), rect.getY());
+                SVGOMPoint ptEnd = new SVGOMPoint(rect.getX() + rect.getWidth(), rect.getY() - rect.getHeight());
+                SVGMatrix mat = SVGLocatableSupport.getCTM(element);
+
+                SVGOMPoint screenPt = (SVGOMPoint) pt.matrixTransform(mat);
+                SVGOMPoint screenPtEnd = (SVGOMPoint) ptEnd.matrixTransform(mat);
+                log.debug("On screen: {}, {}, {}, {}", screenPt.getX(), screenPt.getY(), (screenPtEnd.getX() - screenPt.getX()), (screenPtEnd.getY() - screenPt.getY()));
             }
-
-            SVGRect rect = SVGLocatableSupport.getBBox(element);
-            log.debug("{}, {}, {}, {}", rect.getX(), rect.getY(), rect.getWidth(), rect.getHeight());
-
-            SVGOMPoint pt = new SVGOMPoint(rect.getX(), rect.getY());
-            SVGMatrix mat = SVGLocatableSupport.getCTM(element);
-
-            SVGOMPoint screenPt = (SVGOMPoint) pt.matrixTransform(mat);
-            log.debug("On screen: {}, {}", screenPt.getX(), screenPt.getY());
 
         }, false);
     }
