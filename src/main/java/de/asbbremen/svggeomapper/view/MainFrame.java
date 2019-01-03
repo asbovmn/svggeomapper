@@ -42,27 +42,6 @@ public class MainFrame extends JFrame {
 
         svgCanvas = new SVGCanvas();
         svgCanvas.setURI("file:///D:/aufbauplan2.svg");
-        svgCanvas.addGVTTreeBuilderListener(new GVTTreeBuilderListener() {
-            @Override
-            public void gvtBuildStarted(GVTTreeBuilderEvent gvtTreeBuilderEvent) {
-
-            }
-
-            @Override
-            public void gvtBuildCompleted(GVTTreeBuilderEvent gvtTreeBuilderEvent) {
-                svgCanvas.initListeners();
-            }
-
-            @Override
-            public void gvtBuildCancelled(GVTTreeBuilderEvent gvtTreeBuilderEvent) {
-
-            }
-
-            @Override
-            public void gvtBuildFailed(GVTTreeBuilderEvent gvtTreeBuilderEvent) {
-
-            }
-        });
 
         panel.add("Center", svgCanvas);
     }

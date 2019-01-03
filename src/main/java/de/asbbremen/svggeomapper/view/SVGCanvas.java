@@ -2,17 +2,21 @@ package de.asbbremen.svggeomapper.view;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.batik.anim.dom.SVGLocatableSupport;
+import org.apache.batik.anim.dom.SVGOMPathElement;
 import org.apache.batik.anim.dom.SVGOMTextElement;
-import org.apache.batik.bridge.*;
 import org.apache.batik.dom.svg.SVGOMPoint;
-import org.apache.batik.gvt.GraphicsNode;
+import org.apache.batik.ext.awt.geom.ExtendedGeneralPath;
+import org.apache.batik.ext.awt.geom.ExtendedPathIterator;
+import org.apache.batik.parser.AWTPathProducer;
+import org.apache.batik.parser.PathParser;
 import org.apache.batik.swing.JSVGCanvas;
-import org.w3c.dom.Element;
+import org.apache.batik.swing.svg.GVTTreeBuilderAdapter;
+import org.apache.batik.swing.svg.GVTTreeBuilderEvent;
 import org.w3c.dom.svg.*;
 
+import java.awt.*;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
-import java.awt.geom.Point2D;
 
 @Slf4j
 public class SVGCanvas extends JSVGCanvas {
@@ -20,6 +24,10 @@ public class SVGCanvas extends JSVGCanvas {
         super();
 
         this.setDocumentState(JSVGCanvas.ALWAYS_DYNAMIC);
+        this.setEnableZoomInteractor(true);
+        this.setEnablePanInteractor(true);
+        this.setEnableImageZoomInteractor(true);
+        this.setEnableResetTransformInteractor(true);
         this.addMouseListener(new MouseListener() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -46,31 +54,20 @@ public class SVGCanvas extends JSVGCanvas {
 
             }
         });
+        this.addGVTTreeBuilderListener(new GVTTreeBuilderAdapter() {
+            @Override
+            public void gvtBuildCompleted(GVTTreeBuilderEvent e) {
+                initListeners();
+            }
+        });
     }
 
-    public Element elementAtPosition(Point2D point) {
-        UserAgent userAgent = new UserAgentAdapter();
-        DocumentLoader loader = new DocumentLoader(userAgent);
-        BridgeContext context = new BridgeContext(userAgent, loader);
-        context.setDynamicState(BridgeContext.DYNAMIC);
-        GVTBuilder builder = new GVTBuilder();
-        GraphicsNode rootGraphicsNode = builder.build(context, this.getSVGDocument());
-
-        // rootGraphicsNode can be offseted relative to coordinate system
-        // that means calling this method on coordinates taken directly from the svg file might not work
-        // check the bounds of rootGraphicsNode to determine where the elements actually are
-        System.out.println(rootGraphicsNode.getBounds());
-
-        GraphicsNode graphicsNode = rootGraphicsNode.nodeHitAt(point);
-        if (graphicsNode != null) {
-            return context.getElement(graphicsNode);
-        } else {
-            // if graphicsNode is null there is no element at this position
-            return null;
-        }
-    }
+    private SVGElement lastVisitedElement;
+    private String lastStyle;
 
     public void initListeners() {
+
+
         this.getSVGDocument().getRootElement().addEventListener("click", event -> {
             SVGElement element = (SVGElement) event.getTarget();
             log.debug("ElementStyle: {}", element.getAttribute("style"));
@@ -83,24 +80,49 @@ public class SVGCanvas extends JSVGCanvas {
                 SVGOMTextElement text = (SVGOMTextElement) element.getParentNode();
                 SVGRect rect = SVGLocatableSupport.getBBox(text);
                 log.debug("{}, {}, {}, {}", rect.getX(), rect.getY(), rect.getWidth(), rect.getHeight());
-                SVGOMPoint pt = new SVGOMPoint(rect.getX(), rect.getY());
-                SVGMatrix mat = SVGLocatableSupport.getCTM(text);
-                SVGOMPoint screenPt = (SVGOMPoint) pt.matrixTransform(mat);
+                SVGOMPoint screenPt = transformToScreen(rect.getX(), rect.getY(), (SVGLocatable) rect);
                 log.debug("On screen: {}, {}", screenPt.getX(), screenPt.getY());
+            } else if (element instanceof SVGOMPathElement) {
+                SVGOMPathElement path = (SVGOMPathElement) element;
+                //path letter M: Move To - Start of Path
+                //path letter L: Draw Line To - Segment
+                //Path letter H/V: Draw Horizontal/Vertical Line
+                //Path letter Z: close line
+                //small letter is offset, capital letter is absolute
+                AWTPathProducer pathProducer = new AWTPathProducer();
+                PathParser pathParser = new PathParser();
+                pathParser.setPathHandler(pathProducer);
+                pathParser.parse(path.getAttribute("d"));
+                Shape sh = pathProducer.getShape();
+                ExtendedGeneralPath extendedGeneralPath = (ExtendedGeneralPath) sh;
+                log.debug("Produced {}", sh);
+                SVGMatrix mat = SVGLocatableSupport.getCTM(path);
+
+                ExtendedPathIterator extendedPathIterator = extendedGeneralPath.getExtendedPathIterator();
+                while (!extendedPathIterator.isDone()) {
+                    float[] coords = new float[7];
+                    int type = extendedPathIterator.currentSegment(coords);
+
+                    SVGOMPoint pt = new SVGOMPoint(coords[0], coords[1]);
+                    SVGOMPoint screenPt = (SVGOMPoint) pt.matrixTransform(mat);
+                    log.debug("Point on screen {}, {}", screenPt.getX(), screenPt.getY());
+
+                    extendedPathIterator.next();
+                }
             } else {
 
                 SVGRect rect = SVGLocatableSupport.getBBox(element);
                 log.debug("{}, {}, {}, {}", rect.getX(), rect.getY(), rect.getWidth(), rect.getHeight());
 
-                SVGOMPoint pt = new SVGOMPoint(rect.getX(), rect.getY());
-                SVGOMPoint ptEnd = new SVGOMPoint(rect.getX() + rect.getWidth(), rect.getY() - rect.getHeight());
-                SVGMatrix mat = SVGLocatableSupport.getCTM(element);
-
-                SVGOMPoint screenPt = (SVGOMPoint) pt.matrixTransform(mat);
-                SVGOMPoint screenPtEnd = (SVGOMPoint) ptEnd.matrixTransform(mat);
+                SVGOMPoint screenPt = transformToScreen(rect.getX(), rect.getY(), (SVGLocatable) rect);
+                SVGOMPoint screenPtEnd = transformToScreen(rect.getX() + rect.getWidth(), rect.getY() - rect.getHeight(), (SVGLocatable) rect);
                 log.debug("On screen: {}, {}, {}, {}", screenPt.getX(), screenPt.getY(), (screenPtEnd.getX() - screenPt.getX()), (screenPtEnd.getY() - screenPt.getY()));
             }
 
         }, false);
+    }
+
+    private SVGOMPoint transformToScreen(float x, float y, SVGLocatable locatable) {
+        return (SVGOMPoint) new SVGOMPoint(x, y).matrixTransform(locatable.getCTM());
     }
 }
