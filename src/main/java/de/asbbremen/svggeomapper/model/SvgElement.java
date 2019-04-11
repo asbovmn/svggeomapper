@@ -3,6 +3,7 @@ package de.asbbremen.svggeomapper.model;
 import lombok.Data;
 import org.w3c.dom.svg.SVGElement;
 
+import java.awt.*;
 import java.awt.geom.Dimension2D;
 import java.awt.geom.Point2D;
 
@@ -16,10 +17,14 @@ public class SvgElement {
     /**
      * Dimension of SvgElement
      */
-    private Dimension2D dimension;
+    private Point2D dimension;
 
     /**
      * Reference to SVGElement as resolved from DOM
      */
     private SVGElement svgElement;
+
+    private Color fillColor;
+
+    private Color strokeColor;
 }
