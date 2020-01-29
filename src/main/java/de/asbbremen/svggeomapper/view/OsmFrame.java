@@ -17,14 +17,32 @@ import java.awt.geom.Point2D;
 
 @Slf4j
 public class OsmFrame extends JDialog {
+    public void drawPoint(Point2D.Double p) {
+        Graphics g = mapViewer.getGraphics();
+        g.setColor(Color.RED);
+        g.fillRect((int) p.getX(), (int) p.getY(), 5, 5);
+        log.debug("Draw {}", p);
+    }
+
+    public GeoPosition transform(Point2D p) {
+        Rectangle bounds = mapViewer.getViewportBounds();
+        double x = bounds.x + p.getX();
+        double y = bounds.y + p.getY();
+        Point2D pixelCoordinates = new Point2D.Double(x, y);
+        GeoPosition geo = mapViewer.getTileFactory().pixelToGeo(pixelCoordinates, mapViewer.getZoom());
+
+        return geo;
+    }
+
     public static abstract class RefSetListener implements ListenerManager.Listener {
-        public abstract void pointASet(GeoPosition point);
-        public abstract void pointBSet(GeoPosition point);
+        public abstract void pointASet(Point2D point);
+        public abstract void pointBSet(Point2D point);
     }
 
     public ListenerManager<RefSetListener> refSetListenerListenerManager = new ListenerManager<>();
 
     boolean setA = false, setB = false;
+    private JXMapViewer mapViewer;
 
     public OsmFrame(JFrame parent) {
         super();
@@ -33,7 +51,7 @@ public class OsmFrame extends JDialog {
         setLocationRelativeTo(null);
         setSize(1000, 1000);
 
-        JXMapViewer mapViewer = new JXMapViewer();
+        mapViewer = new JXMapViewer();
 
         // Create a TileFactoryInfo for OpenStreetMap
         TileFactoryInfo info = new OSMTileFactoryInfo();
@@ -89,11 +107,18 @@ public class OsmFrame extends JDialog {
 
                 log.debug("Clicked at {}, {}", geo.getLatitude(), geo.getLongitude());
 
-                if(setA) {
+                /*if(setA) {
                     refSetListenerListenerManager.notify(listener -> listener.pointASet(geo));
                 }
                 if (setB) {
                     refSetListenerListenerManager.notify(listener -> listener.pointBSet(geo));
+                }*/
+
+                if(setA) {
+                    refSetListenerListenerManager.notify(listener -> listener.pointASet(e.getPoint()));
+                }
+                if (setB) {
+                    refSetListenerListenerManager.notify(listener -> listener.pointBSet(e.getPoint()));
                 }
 
 

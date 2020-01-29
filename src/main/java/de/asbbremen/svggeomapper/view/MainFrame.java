@@ -4,6 +4,7 @@ import com.giaybac.traprange.PDFTableExtractor;
 import com.giaybac.traprange.entity.Table;
 import com.giaybac.traprange.entity.TableCell;
 import com.giaybac.traprange.entity.TableRow;
+import com.google.common.base.Strings;
 import com.google.common.io.Files;
 import com.itextpdf.text.pdf.PdfReader;
 import com.itextpdf.text.pdf.parser.*;
@@ -60,7 +61,7 @@ public class MainFrame extends JFrame {
     private Point2D topLeft, bottomRight;
     private Point2D rasterTopLeft, rasterBottomRight;
     private Point2D georefA, georefB;
-    private GeoPosition georefOsmA, georefOsmB;
+    private Point2D georefOsmA, georefOsmB;
     private double georefDistFactor, georefAngleDiff;
 
     private Map<String, Rectangle2D> rasters = new HashMap<>();
@@ -69,6 +70,8 @@ public class MainFrame extends JFrame {
     private DefaultListModel<ValuedSvgElement> listModel;
 
     private Set<Stand> stands;
+    private Set<Stand> sonderobjekte = new HashSet<>();
+    private OsmFrame osmFrame;
 
 
     public MainFrame() {
@@ -97,7 +100,7 @@ public class MainFrame extends JFrame {
         });
 
         svgCanvas = new SVGCanvas();
-        svgCanvas.setURI("file:///D:/osterwiese2019.svg");
+        svgCanvas.setURI("file:///D:/lageplan-freimarkt-2019.svg");
         svgCanvas.hoverListenerManager.addListener(new SVGCanvas.SvgElementSelectListener() {
             @Override
             public void svgElementSelected(SvgElement svgElement) {
@@ -513,9 +516,40 @@ public class MainFrame extends JFrame {
     }
 
     private void parsePdf() {
+        List<String> lines = null;
+        try {
+            lines = Files.readLines(new File("d:/teilnehmer.csv"), StandardCharsets.ISO_8859_1);
+        } catch (IOException e) {
+            log.error("Can't read file");
+        }
+
+        if (lines == null) {
+            return;
+        }
+
+
+        stands = new HashSet<>();
+        Set<String> notFound = new HashSet<>();
+
+        lines.stream().map(line -> line.split(";")).forEach(arr -> {
+            Stand stand = buildStand(arr[0], arr[1]);
+            if (stand.getValuedSvgElement() == null) {
+                notFound.add(arr[1]);
+            }
+            stands.add(stand);
+        });
+
+        JOptionPane.showMessageDialog(this, "Keinen Stand auf Karte gefunden für: " + notFound.stream().collect(Collectors.joining(", ")));
+        Set<String> foundNumbers = stands.stream().map(s -> s.getNumber()).collect(Collectors.toSet());
+
+        JOptionPane.showMessageDialog(this, "Auf Karte aber nicht in Liste gefunden: " +
+                flaggedObjects.stream().filter(o -> !foundNumbers.contains(o.getValue())).map(v -> v.getValue()).collect(Collectors.joining(", ")));
+    }
+
+    /*private void parsePdf() {
         PDFTableExtractor extractor = new PDFTableExtractor();
         int[] lineidx = {0, 1, 2, -1};
-        List<Table> extract = extractor.setSource("d:/teilnehmer.pdf")
+        List<Table> extract = extractor.setSource("d:/teilnehmer-freimarkt.pdf")
                 .exceptLine(lineidx)
                 .extract();
 
@@ -565,6 +599,16 @@ public class MainFrame extends JFrame {
             notFound.add(number);
         }
 
+        String csvData = stands.stream()
+                .map(s -> s.getName() + ";" + s.getNumber())
+                .collect(Collectors.joining("\n"));
+
+        try {
+            Files.write(csvData, new File("d:/teilnehmer.csv"), StandardCharsets.ISO_8859_1);
+        } catch (IOException e) {
+            log.error("Can't write file: ", e);
+        };
+
         JOptionPane.showMessageDialog(this, "Keinen Stand auf Karte gefunden für: " + notFound.stream().collect(Collectors.joining(", ")));
         Set<String> foundNumbers = stands.stream().map(s -> s.getNumber()).collect(Collectors.toSet());
 
@@ -572,7 +616,7 @@ public class MainFrame extends JFrame {
                         flaggedObjects.stream().filter(o -> !foundNumbers.contains(o.getValue())).map(v -> v.getValue()).collect(Collectors.joining(", ")));
 
         log.debug("{}", extract.size());
-    }
+    }*/
 
     private Stand buildStand(String name, String number) {
         Optional<ValuedSvgElement> object = flaggedObjects.stream().filter(o -> o.getValue().equalsIgnoreCase(number)).findFirst();
@@ -603,6 +647,12 @@ public class MainFrame extends JFrame {
             parsePdf();
         });
 
+        JButton buttonSonderobjekt = new JButton("Sonderobjekt markieren");
+        panel.add(buttonSonderobjekt);
+        buttonSonderobjekt.addActionListener(ae -> {
+            addSonderobjekt();
+        });
+
         JButton buttonExport = new JButton("CSV erzeugen");
         panel.add(buttonExport);
         buttonExport.addActionListener(ae -> {
@@ -610,6 +660,25 @@ public class MainFrame extends JFrame {
         });
 
         return panel;
+    }
+
+    private void addSonderobjekt() {
+        svgCanvas.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                Stand s = new Stand();
+                s.setLocationPx(e.getPoint());
+                s.setRaster(rasters.entrySet().stream().filter(r -> r.getValue().contains(s.getLocationPx())).map(r -> r.getKey()).findAny().orElse(""));
+                String name = (String) JOptionPane.showInputDialog(MainFrame.this, "Name festlegen", "Name des Sonderobjekts", JOptionPane.PLAIN_MESSAGE, null, null, "");
+
+                if (!Strings.isNullOrEmpty(name)) {
+                    s.setName(name);
+                    sonderobjekte.add(s);
+                }
+
+                svgCanvas.removeMouseListener(this);
+            }
+        });
     }
 
     private void exportCsv() {
@@ -627,9 +696,9 @@ public class MainFrame extends JFrame {
         double dist = georefA.distance(georefB);
 
 
-        double osmDx = georefOsmB.getLongitude() - georefOsmA.getLongitude();
-        double osmDy = georefOsmB.getLatitude() - georefOsmA.getLatitude();
-        double osmAngle = Math.atan2(-osmDy, osmDx);
+        double osmDx = georefOsmB.getX() - georefOsmA.getX();
+        double osmDy = georefOsmB.getY() - georefOsmA.getY();
+        double osmAngle = Math.atan2(osmDy, osmDx);
         double osmDist = Math.sqrt((osmDx * osmDx) + (osmDy * osmDy));
 
         georefAngleDiff = osmAngle - angle;
@@ -648,8 +717,15 @@ public class MainFrame extends JFrame {
                         + ";" + (s.getLocation()==null?"":s.getLocation().getLongitude()) + ";" + (s.getLocation()==null?"":s.getLocation().getLatitude()) + ";1")
                 .collect(Collectors.joining("\n"));
 
+
+        String csvDataSonderobjekte = sonderobjekte.stream()
+                .peek(s -> s.setLocation(transform(s.getLocationPx())))
+                .map(s -> s.getName() + ";;Bremen;Findorff;28215;Bürgerweide;" + (s.getRaster()==null?"":s.getRaster()) +
+                        ";" + (s.getLocation()==null?"":s.getLocation().getLongitude()) + ";" + (s.getLocation()==null?"":s.getLocation().getLatitude()) + ";1")
+                .collect(Collectors.joining("\n"));
+
         try {
-            Files.write(csvHeadline + csvData, new File("d:/objekte.csv"), StandardCharsets.ISO_8859_1);
+            Files.write(csvHeadline + csvData + "\n" + csvDataSonderobjekte, new File("d:/objekte.csv"), StandardCharsets.ISO_8859_1);
         } catch (IOException e) {
             log.error("Can't write file: ", e);
         };
@@ -670,7 +746,11 @@ public class MainFrame extends JFrame {
 
         double ndx = Math.cos(targetAngle) * targetDist;
         double ndy = Math.sin(targetAngle) * targetDist;
-        return new GeoPosition(georefOsmA.getLatitude() - ndy, georefOsmA.getLongitude() + ndx);
+
+        Point2D.Double p = new Point2D.Double(georefOsmA.getX() + ndx, georefOsmA.getY() + ndy);
+        osmFrame.drawPoint(p);
+
+        return osmFrame.transform(p);
     }
 
     private JPanel buildGeoRefPanel() {
@@ -707,15 +787,15 @@ public class MainFrame extends JFrame {
         JButton button = new JButton("-> OSM");
         panel.add(button);
         button.addActionListener(ae -> {
-            OsmFrame osmFrame = new OsmFrame(this);
+            osmFrame = new OsmFrame(this);
             osmFrame.refSetListenerListenerManager.addListener(new OsmFrame.RefSetListener() {
                 @Override
-                public void pointASet(GeoPosition point) {
+                public void pointASet(Point2D point) {
                     georefOsmA = point;
                 }
 
                 @Override
-                public void pointBSet(GeoPosition point) {
+                public void pointBSet(Point2D point) {
                     georefOsmB = point;
                 }
             });
@@ -784,6 +864,7 @@ public class MainFrame extends JFrame {
             label.setOpaque(true);
             label.setBackground(e.getFillColor());
             label.setBorder(BorderFactory.createLineBorder(e.getStrokeColor()));
+            label.setPreferredSize(new Dimension(50, 10));
             selectedObjectsPanel.add(label);
             this.revalidate();
         }));
